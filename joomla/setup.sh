@@ -33,13 +33,10 @@ SQL
 }
 
 function configure_apache() {
-    local template="conf/apache.tpl"
-    cat >/etc/apache2/ports.conf <<EOF
-Listen 127.0.0.1:$APACHE_PORT
-EOF
-    
-    WEBROOT="${WEBROOT}" DOMAIN="${DOMAIN}" APACHE_PORT="${APACHE_PORT}" \
-    envsubst < "$template" > "/etc/apache2/sites-available/$DOMAIN.conf"
+    APACHE_PORT=$APACHE_PORT envsubst < ./conf/ports.conf >/etc/apache2/ports.conf
+
+    WEBROOT="${WEBROOT}" DOMAIN="${DOMAIN}" APACHE_PORT="${APACHE_PORT}" \ 
+        envsubst < "./conf/apache.conf" > "/etc/apache2/sites-available/$DOMAIN.conf"
     
 }
 
@@ -63,32 +60,8 @@ function enable_apache_modules() {
 }
 
 function configure_nginx_proxy() {
-  cat >"/etc/nginx/sites-available/$DOMAIN" <<EOF
-server {
-  listen 80;
-  server_name $DOMAIN www.$DOMAIN;
-  root $WEBROOT;
-  index index.php index.html;
-
-  location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
-  location ~ \.php\$ {
-      proxy_pass http://127.0.0.1:$APACHE_PORT;
-      proxy_set_header Host \$host;
-      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-  }
-
-  location ~* \.(jpg|jpeg|png|gif|ico|css|js)\$ {
-        expires max;
-        log_not_found off;
-  }
-
-  access_log /var/log/nginx/$DOMAIN.access.log;
-  error_log /var/log/nginx/$DOMAIN.error.log;
-}
-EOF
+    DOMAIN=$DOMAIN WEBROOT=$WEBROOT APACHE_PORT=$APACHE_PORT \
+        envsubst < ./conf/nginx.conf > "/etc/nginx/sites-available/$DOMAIN"
     ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
     systemctl restart nginx
 }

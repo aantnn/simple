@@ -1,0 +1,28 @@
+- name: Install mail stack
+  package:
+    name:
+      - postfix
+      - dovecot-core
+      - opendkim
+    state: present
+
+- name: Deploy Postfix configs
+  copy:
+    src: "postfix/{{ item }}"
+    dest: "/etc/postfix/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - main.cf
+    - master.cf
+  notify: reload postfix
+
+- name: Deploy Dovecot config
+  copy:
+    src: dovecot/dovecot.conf
+    dest: /etc/dovecot/dovecot.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload dovecot

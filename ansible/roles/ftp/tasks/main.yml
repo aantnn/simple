@@ -1,0 +1,75 @@
+---
+- name: Install FTP stack
+  ansible.builtin.package:
+    name:
+      - vsftpd
+      - mariadb-server
+      - mariadb
+      - db4-utils
+    state: present
+
+- name: Ensure vsftpd service enabled
+  ansible.builtin.service:
+    name: vsftpd
+    enabled: true
+
+- name: Deploy vsftpd.conf
+  ansible.builtin.copy:
+    src: vsftpd.conf
+    dest: /etc/vsftpd/vsftpd.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart vsftpd
+
+
+- name: Create FTP database
+  community.mysql.mysql_db:
+    name: "{{ ftp_db }}"
+    state: present
+
+- name: Create FTP DB user with SELECT privilege
+  community.mysql.mysql_user:
+    name: "{{ ftp_db_user }}"
+    host: localhost
+    password: "{{ ftp_db_pass }}"
+    priv: "{{ ftp_db }}.*:SELECT"
+    state: present
+
+- name: Flush MySQL privileges
+  community.mysql.mysql_query:
+    query: FLUSH PRIVILEGES;
+
+- name: Copy MySQL virtual users schema
+  ansible.builtin.copy:
+    src: mysql-virtual-users.sql
+    dest: /tmp/mysql-virtual-users.sql
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Import FTP schema
+  community.mysql.mysql_db:
+    state: import
+    name: ftp
+    target: /tmp/mysql-virtual-users.sql
+
+
+- name: Copy FTP user management scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /usr/local/bin/{{ item }}
+    owner: root
+    group: root
+    mode: '0750'
+  loop:
+    - add_ftp_user.sh
+    - remove_ftp_user.sh
+
+- name: Ensure FTP root dir exists
+  ansible.builtin.file:
+    path: /srv/ftp
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'

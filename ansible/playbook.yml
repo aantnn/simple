@@ -1,0 +1,9 @@
+- hosts: all
+  become: true
+  roles:
+    - ftp
+    - mail
+    - wordpress
+    - joomla
+    - zabbix
+    - pma

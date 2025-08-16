@@ -31,7 +31,7 @@ SQL
 
 configure_user_root() {
   local webroot="/var/www/${DOMAIN}"
-  local template="conf/vsftpd_user.tpl"
+  local template="conf/vsftpd_user.conf"
   local target="${FTP_USERS_DIR}/${FTP_VUSER}"
 
   mkdir -p "$webroot"

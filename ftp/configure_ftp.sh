@@ -32,7 +32,7 @@ SQL
 }
 
 configure_pam() {
-    local template="conf/vsftpd.mysql.pam.tpl"
+    local template="./conf/vsftpd.mysql.pam.conf"
     local target="/etc/pam.d/vsftpd.mysql"
     FTP_DB_USER="${FTP_DB_USER}" FTP_DB_PASS="${FTP_DB_PASS}" FTP_DB="${FTP_DB}" \
     envsubst < "$template" > "$target"
@@ -44,7 +44,7 @@ configure_pam() {
 configure_vsftpd() {
     cp -a /etc/vsftpd.conf /etc/vsftpd.conf.bak || true
     mkdir -p "${FTP_USERS_DIR}"
-    local template="conf/vsftpd.conf.tpl"
+    local template="./conf/vsftpd.conf"
     local target="/etc/vsftpd.conf"
     
     FTP_USERS_DIR="${FTP_USERS_DIR}" GUEST_USER="${GUEST_USER}" PASV_MIN="${PASV_MIN}" PASV_MAX="${PASV_MAX}" \
