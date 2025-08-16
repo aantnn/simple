@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Use KeePassXC secret service
 # ansible-vault edit --vault-password-file=./vault-pass-secret-service.py 
 # secret-tool store --label='ansible-vault' xdg:schema org.freedesktop.Secret.Generic account ansible-vault
 import gi
