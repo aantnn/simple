@@ -1,0 +1,1 @@
+ansible-vault encrypt_string  --encrypt-vault-id dev  'ftppass123!ChangeMe' --name 'ftp_db_pass'
