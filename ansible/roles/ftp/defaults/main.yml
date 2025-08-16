@@ -1,6 +1,4 @@
-ftp_db: ftp
-ftp_db_user: ftpuser
-ftp_db_pass: "ftppass123!ChangeMe"
+
 ftp_listen: "YES"
 ftp_listen_ipv6: "NO"
 ftp_anonymous_enable: "NO"
