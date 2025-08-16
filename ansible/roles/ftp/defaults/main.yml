@@ -1,4 +1,3 @@
-
 ftp_listen: "YES"
 ftp_listen_ipv6: "NO"
 ftp_anonymous_enable: "NO"
