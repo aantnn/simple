@@ -8,6 +8,7 @@ function check_config_file() {
         echo "Config file '$CONFIG' not found"
         exit 1
     fi
+    # shellcheck source=./joomla.env
     source "$CONFIG"
 }
 
@@ -35,7 +36,7 @@ SQL
 function configure_apache() {
     APACHE_PORT=$APACHE_PORT envsubst < ./conf/ports.conf >/etc/apache2/ports.conf
 
-    WEBROOT="${WEBROOT}" DOMAIN="${DOMAIN}" APACHE_PORT="${APACHE_PORT}" \ 
+    WEBROOT="${WEBROOT}" DOMAIN="${DOMAIN}" APACHE_PORT="${APACHE_PORT}" \
         envsubst < "./conf/apache.conf" > "/etc/apache2/sites-available/$DOMAIN.conf"
     
 }

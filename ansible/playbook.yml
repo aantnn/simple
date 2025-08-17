@@ -1,4 +1,5 @@
-- hosts: all
+- name: Ansible Playbook for Example Server Setup
+  hosts: all
   become: true
   roles:
     - ftp

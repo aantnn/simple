@@ -57,7 +57,7 @@ restart_services() {
 }
 
 main() {
-    configure_mysql
+    #configure_mysql
     configure_pam
     configure_vsftpd
     restart_services

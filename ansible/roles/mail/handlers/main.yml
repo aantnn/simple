@@ -1,9 +1,9 @@
-- name: reload postfix
-  service:
+- name: Reload postfix
+  ansible.builtin.service:
     name: postfix
     state: reloaded
 
-- name: reload dovecot
-  service:
+- name: Reload dovecot
+  ansible.builtin.service:
     name: dovecot
     state: reloaded

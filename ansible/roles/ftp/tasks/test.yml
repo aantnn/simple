@@ -1,0 +1,39 @@
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure FTP database exists
+      community.mysql.mysql_db:
+        name: "ftpdb"
+        state: present
+        login_user: root
+        login_password: "1"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+    - name: Ensure FTP DB user exists with proper grants
+      community.mysql.mysql_user:
+        name: "ftpuser"
+        host: localhost
+        password: "ftppass123!ChangeMe"
+        priv: "ftpdb.*:SELECT"
+        state: present
+        login_user: root
+        login_password: "1"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+    - name: Ensure `users` table exists
+      community.mysql.mysql_query:
+        login_db: ftpdb
+        login_user: root
+        login_password: "1"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+        query: |
+          CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(64) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            active TINYINT(1) NOT NULL DEFAULT 1
+          );
+    - name: Create FTP user using action plugin add_ftp_user.py
+      ftp:
+        username: "ftpuser"
+        password: "ftp_password"
+        state: present
+        webroot: /var/www-data/example.local

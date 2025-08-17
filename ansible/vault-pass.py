@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# ansible-vault edit --vault-password-file=./vault-pass-secret-service.py 
 # secret-tool store --label='ansible-vault-dev' xdg:schema org.freedesktop.Secret.Generic account  ansible-vault-dev
+# ansible-vault create  --vault-id dev@./vault-pass-dev.py dev-secret.yml
 import os, sys, gi
 gi.require_version('Secret', '1')
 from gi.repository import Secret

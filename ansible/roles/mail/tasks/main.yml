@@ -1,5 +1,5 @@
 - name: Install mail stack
-  package:
+  ansible.builtin.package:
     name:
       - postfix
       - dovecot-core
@@ -7,7 +7,7 @@
     state: present
 
 - name: Deploy Postfix configs
-  copy:
+  ansible.builtin.copy:
     src: "postfix/{{ item }}"
     dest: "/etc/postfix/{{ item }}"
     owner: root
@@ -19,7 +19,7 @@
   notify: reload postfix
 
 - name: Deploy Dovecot config
-  copy:
+  ansible.builtin.copy:
     src: dovecot/dovecot.conf
     dest: /etc/dovecot/dovecot.conf
     owner: root
