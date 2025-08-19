@@ -1,4 +1,4 @@
-- hosts: "192.168.122.53"
+- hosts: "192.168.122.54"
   gather_facts: false
   vars:
     ansible_become_password: "1"
@@ -17,10 +17,22 @@
         name:
           - PyMySQL
       become: true
+      
+    - name: Gather available services
+      ansible.builtin.service_facts:
+    - name: Pick mysql or mysqld if available
+      set_fact: 
+        mysql_service_name: >-
+          {{
+            (services.keys()
+            | select('match', '^(mysql|mysqld|mariadb)')
+            | list
+            | first) | default('unknown')
+          }}
     - name: Ensure mysql-server is running
       ansible.builtin.service:
         state: started
-        name: mysql
+        name: "{{ mysql_service_name }}"
       become: true
     - name: Ensure FTP database exists
       community.mysql.mysql_db:
@@ -28,7 +40,7 @@
         state: present
         login_user: root
         # login_password: "1"
-        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_unix_socket: /var/lib/mysql/mysql.sock
       become: true
     - name: Ensure FTP DB user exists with proper grants
       community.mysql.mysql_user:
@@ -39,14 +51,14 @@
         state: present
         login_user: root
         # login_password: "1"
-        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_unix_socket: /var/lib/mysql/mysql.sock
       become: true
     - name: Ensure `users` table exists
       community.mysql.mysql_query:
         login_db: ftpdb
         login_user: root
         # login_password: "1"
-        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_unix_socket: /var/lib/mysql/mysql.sock
         query: |
           CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,

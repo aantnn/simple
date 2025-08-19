@@ -198,7 +198,7 @@ class ActionModule(ActionBase):
     def _gather_configuration_vars(self, task_vars, result):
         """Collect all necessary configuration variables from system files."""
 
-        vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd.conf", result)
+        vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd/vsftpd.conf", result)
         conf_vars = self._parse_vars(vsftpd_conf, self.VAR_PATTERNS)
         pam_conf = self._read_remote_file(
             task_vars, f"/etc/pam.d/{conf_vars['pam_service_name']}", result
@@ -297,13 +297,13 @@ class ActionModule(ActionBase):
 
 class ConfigVarMissingError(AnsibleActionFail):
     ERROR_DESCRIPTIONS = {
-        "ftp_guest_user": ("Missing 'guest_username' in /etc/vsftpd.conf."),
+        "ftp_guest_user": ("Missing 'guest_username' in /etc/vsftpd/vsftpd.conf."),
         "ftp_users_dir": (
-            "Missing 'user_config_dir' in /etc/vsftpd.conf. "
+            "Missing 'user_config_dir' in /etc/vsftpd/vsftpd.conf. "
             "Prevents configuration from being deployed for the new FTP account."
         ),
         "pam_service_name": (
-            "Missing 'pam_service_name' in /etc/vsftpd.conf. "
+            "Missing 'pam_service_name' in /etc/vsftpd/vsftpd.conf. "
             "This specifies the PAM service file in /etc/pam.d/ that controls authentication "
             "for FTP logins. Without it, the plugin cannot locate and parse the associated "
             "PAM configuration to extract database login credentials."
