@@ -137,9 +137,7 @@ class ActionModule(ActionBase):
             if m:
                 out[key] = m.group(1)
             else:
-                raise AnsibleActionFail(
-                    message=ERROR_DESCRIPTIONS[key]
-                )
+                raise ConfigVarMissingError(key)
         return out
 
     def run(self, tmp=None, task_vars=None):
@@ -266,7 +264,11 @@ class ActionModule(ActionBase):
         return result
 
 
-ERROR_DESCRIPTIONS = {
+
+
+
+class ConfigVarMissingError(AnsibleActionFail):
+    ERROR_DESCRIPTIONS = {
     "ftp_guest_user": (
         "Missing 'guest_username' in /etc/vsftpd.conf."
     ),
@@ -293,3 +295,17 @@ ERROR_DESCRIPTIONS = {
         "No 'host=<hostname|IP>' found in PAM configuration. "
     ),
 }
+    """Raised when a required configuration variable is missing or invalid."""
+
+    def __init__(self, key: str, *, source: str = None):
+        # Base message from mapping, or a fallback
+        message = self.ERROR_DESCRIPTIONS.get(
+            key, f"Missing or invalid configuration value for '{key}'"
+        )
+        # Optionally append source file info
+        if source:
+            message = f"{message} (source: {source})"
+
+        super().__init__(message=message)
+        self.key = key
+        self.source = source
