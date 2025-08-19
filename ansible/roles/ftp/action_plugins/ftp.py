@@ -139,110 +139,24 @@ class ActionModule(ActionBase):
             else:
                 raise ConfigVarMissingError(key)
         return out
-
     def run(self, tmp=None, task_vars=None):
         result = super(ActionModule, self).run(tmp, task_vars)
         del tmp
         args = self._task.args
 
-        required = ["username", "password", "webroot", "state"]
-        missing = [r for r in required if r not in args]
-        if missing:
-            self._ensure_invocation(result)
-            raise AnsibleActionFail(
-                message=f"Missing required args: {', '.join(missing)}"
-            )
-
-        changed = False
         try:
-            vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd.conf", result)
-            conf_vars = self._parse_vars(vsftpd_conf, self.VAR_PATTERNS)
-            del vsftpd_conf
-
-            pam_conf = self._read_remote_file(
-                task_vars, f"/etc/pam.d/{conf_vars['pam_service_name']}", result
-            )
-            pam_vars = self._parse_vars(pam_conf, self.PAM_PATTERNS)
-            del pam_conf
-
-            conf_vars.update(pam_vars)
-            del pam_vars
-
-            hashed = self._gen_hash(args.get("password"))
-            uname = _safe_identifier(args.get("username"))
-
-            q = (
-                "INSERT INTO users (username, password, active) "
-                f"VALUES ('{_safe_sql_literal(uname)}','{_safe_sql_literal(hashed)}',1) "
-                "ON DUPLICATE KEY UPDATE password=VALUES(password), active=1;"
-            )
-            exec_result = self._mysql_query(
-                task_vars,
-                login_db=conf_vars.get("db_name"),
-                login_user=conf_vars.get("db_login_user"),
-                login_password=conf_vars.get("db_login_password"),
-                login_host=conf_vars.get("db_host"),
-                query=q,
-            )
-            if exec_result.get("failed"):
-                result.update(exec_result)
-                raise AnsibleActionFail(result=result)
-            changed = exec_result.get("changed", False) or changed
-
-            webroot = args.get("webroot")
-            exec_result = self._ensure_dir(
-                task_vars,
-                webroot,
-                conf_vars.get("ftp_guest_user"),
-                conf_vars.get("ftp_guest_user"),
-                "0755",
-            )
-            if exec_result.get("failed"):
-                result.update(exec_result)
-                raise AnsibleActionFail(
-                    message=to_text(
-                        exec_result.get("msg") or "Failed to create webroot"
-                    ),
-                    result=result,
-                )
-            changed = exec_result.get("changed", False) or changed
-
-            config_content = f"local_root={webroot}\nwrite_enable=YES\n"
-
-            copy_task = self._task.copy()
-            copy_task.args = dict(
-                dest=f"{conf_vars.get('ftp_users_dir')}/{uname}",
-                content=config_content,
-                owner=conf_vars.get("ftp_guest_user"),
-                group=conf_vars.get("ftp_guest_user"),
-                mode="0644",
-            )
-            copy_task.no_log = True  # extra safety
-
-            exec_result = self._shared_loader_obj.action_loader.get(
-                "ansible.builtin.copy",
-                task=copy_task,
-                connection=self._connection,
-                play_context=self._play_context,
-                loader=self._loader,
-                templar=self._templar,
-                shared_loader_obj=self._shared_loader_obj,
-            ).run(task_vars=task_vars)
-            if exec_result.get("failed"):
-                result.update(exec_result)
-                raise AnsibleActionFail(
-                    message=to_text(exec_result.get("msg") or "Failed to write config"),
-                    result=result,
-                )
-            changed = exec_result.get("changed", False) or changed
+            self._validate_required_args(args, result)
+            conf_vars = self._gather_configuration_vars(task_vars, result)
+        
+            changed = False
+            changed |= self._update_ftp_user_in_database(args, conf_vars, task_vars, result)
+            changed |= self._ensure_webroot_directory(args, conf_vars, task_vars, result)
+            changed |= self._create_user_config_file(args, conf_vars, task_vars, result)
 
             result.update(
                 changed=changed,
-                msg=f"FTP user {uname} created/updated with webroot: {webroot}",
+                msg=f"FTP user {args['username']} created/updated with webroot: {args['webroot']}",
             )
-
-            # Minimize secret residue
-            del conf_vars, hashed, uname, webroot, config_content
 
         except AnsibleActionFail as ex:
             result.setdefault("failed", True)
@@ -257,6 +171,111 @@ class ActionModule(ActionBase):
         self._ensure_invocation(result)
         return result
 
+    def _validate_required_args(self, args, result):
+        """Validate that all required arguments are present."""
+        required = ["username", "password", "webroot", "state"]
+        missing = [r for r in required if r not in args]
+        if missing:
+            self._ensure_invocation(result)
+            raise AnsibleActionFail(
+                message=f"Missing required args: {', '.join(missing)}"
+            )
+    
+    def _gather_configuration_vars(self, task_vars, result):
+        """Collect all necessary configuration variables from system files."""
+        try:
+            vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd.conf", result)
+            conf_vars = self._parse_vars(vsftpd_conf, self.VAR_PATTERNS)
+            
+            pam_conf = self._read_remote_file(
+                task_vars, f"/etc/pam.d/{conf_vars['pam_service_name']}", result
+            )
+            pam_vars = self._parse_vars(pam_conf, self.PAM_PATTERNS)
+            
+            conf_vars.update(pam_vars)
+            return conf_vars
+            
+        except ConfigVarMissingError as ex:
+            raise AnsibleActionFail(message=str(ex), result=result)
+    
+    def _update_ftp_user_in_database(self, args, conf_vars, task_vars, result):
+        """Update or create the FTP user in the database."""
+        hashed = self._gen_hash(args["password"])
+        uname = _safe_identifier(args["username"])
+        
+        q = (
+            "INSERT INTO users (username, password, active) "
+            f"VALUES ('{_safe_sql_literal(uname)}','{_safe_sql_literal(hashed)}',1) "
+            "ON DUPLICATE KEY UPDATE password=VALUES(password), active=1;"
+        )
+        
+        exec_result = self._mysql_query(
+            task_vars,
+            login_db=conf_vars["db_name"],
+            login_user=conf_vars["db_login_user"],
+            login_password=conf_vars["db_login_password"],
+            login_host=conf_vars["db_host"],
+            query=q,
+        )
+        
+        if exec_result.get("failed"):
+            result.update(exec_result)
+            raise AnsibleActionFail(result=result)
+        
+        return exec_result.get("changed", False)
+    
+    def _ensure_webroot_directory(self, args, conf_vars, task_vars, result):
+        """Ensure the webroot directory exists with correct permissions."""
+        exec_result = self._ensure_dir(
+            task_vars,
+            args["webroot"],
+            conf_vars["ftp_guest_user"],
+            conf_vars["ftp_guest_user"],
+            "0755",
+        )
+        
+        if exec_result.get("failed"):
+            result.update(exec_result)
+            raise AnsibleActionFail(
+                message=to_text(exec_result.get("msg") or "Failed to create webroot"),
+                result=result,
+            )
+        
+        return exec_result.get("changed", False)
+    
+    def _create_user_config_file(self, args, conf_vars, task_vars, result):
+        """Create the user-specific vsftpd configuration file."""
+        config_content = f"local_root={args['webroot']}\nwrite_enable=YES\n"
+        uname = _safe_identifier(args["username"])
+        
+        copy_task = self._task.copy()
+        copy_task.args = dict(
+            dest=f"{conf_vars['ftp_users_dir']}/{uname}",
+            content=config_content,
+            owner=conf_vars["ftp_guest_user"],
+            group=conf_vars["ftp_guest_user"],
+            mode="0644",
+        )
+        copy_task.no_log = True  # extra safety
+    
+        exec_result = self._shared_loader_obj.action_loader.get(
+            "ansible.builtin.copy",
+            task=copy_task,
+            connection=self._connection,
+            play_context=self._play_context,
+            loader=self._loader,
+            templar=self._templar,
+            shared_loader_obj=self._shared_loader_obj,
+        ).run(task_vars=task_vars)
+        
+        if exec_result.get("failed"):
+            result.update(exec_result)
+            raise AnsibleActionFail(
+                message=to_text(exec_result.get("msg") or "Failed to write config"),
+                result=result,
+            )
+        
+        return exec_result.get("changed", False)
 
 
 
