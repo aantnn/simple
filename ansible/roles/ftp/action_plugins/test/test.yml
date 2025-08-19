@@ -1,0 +1,65 @@
+- hosts: "192.168.122.53"
+  gather_facts: false
+  vars:
+    ansible_become_password: "1"
+  tasks:
+    - name: Install required packages
+      ansible.builtin.package:
+        state: present
+        name:
+          - python3-pip
+          - mysql-server
+          - vsftpd
+      become: true
+    - name: Install PyMySQL python
+      ansible.builtin.pip:
+        state: present
+        name:
+          - PyMySQL
+      become: true
+    - name: Ensure mysql-server is running
+      ansible.builtin.service:
+        state: started
+        name: mysql
+      become: true
+    - name: Ensure FTP database exists
+      community.mysql.mysql_db:
+        name: "ftpdb"
+        state: present
+        login_user: root
+        # login_password: "1"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      become: true
+    - name: Ensure FTP DB user exists with proper grants
+      community.mysql.mysql_user:
+        name: "ftpuser"
+        host: localhost
+        password: "ftppass123!ChangeMe"
+        priv: "ftpdb.*:SELECT,INSERT,UPDATE,DELETE"
+        state: present
+        login_user: root
+        # login_password: "1"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      become: true
+    - name: Ensure `users` table exists
+      community.mysql.mysql_query:
+        login_db: ftpdb
+        login_user: root
+        # login_password: "1"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query: |
+          CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(64) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            active TINYINT(1) NOT NULL DEFAULT 1
+          );
+      become: true
+    - name: Create FTP user using action plugin add_ftp_user.py
+      ftp:
+        username: "ftpuser"
+        password: "ftp_password"
+        state: present
+        webroot: /var/www-data/example.local
+      become: true
+
