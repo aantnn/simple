@@ -42,8 +42,6 @@ class ActionModule(ActionBase):
         args = self._task.args
 
         try:
-            conf_vars=dict()
-            print(conf_vars['ffff'])
             self._validate_required_args(args, result)
             conf_vars = self._gather_configuration_vars(task_vars, result)
            
