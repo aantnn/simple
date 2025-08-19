@@ -17,6 +17,8 @@ from ansible.module_utils._text import to_text
 import secrets, string, hashlib, base64
 
 
+
+
 SENSITIVE_KEY_PAT = re.compile(
     r"(pass|password|passwd|secret|token|key|api[_-]?key|auth|authorization|cookie|content|query|queries)$",
     re.IGNORECASE,
@@ -136,7 +138,7 @@ class ActionModule(ActionBase):
                 out[key] = m.group(1)
             else:
                 raise AnsibleActionFail(
-                    message=f"Could not find key: {key} in provided file"
+                    message=ERROR_DESCRIPTIONS[key]
                 )
         return out
 
@@ -247,10 +249,12 @@ class ActionModule(ActionBase):
         except AnsibleActionFail as ex:
             # Already sanitized, just ensure invocation is present
             #result.update(_sanitize_invocation(result))
+            result['failed']=True
+            result['msg'] = ex.message
             self._ensure_invocation(result)
-            raise AnsibleActionFail(
-                orig_exc=ex, result=result
-            )
+            #raise AnsibleActionFail(
+            #    orig_exc=ex, result=result
+            #)
         except Exception as e:
             # Generic error path; don't leak internals
             result.setdefault("failed", True)
@@ -260,3 +264,32 @@ class ActionModule(ActionBase):
 
         self._ensure_invocation(result)
         return result
+
+
+ERROR_DESCRIPTIONS = {
+    "ftp_guest_user": (
+        "Missing 'guest_username' in /etc/vsftpd.conf."
+    ),
+    "ftp_users_dir": (
+        "Missing 'user_config_dir' in /etc/vsftpd.conf. "
+        "Prevents configuration from being deployed for the new FTP account."
+    ),
+    "pam_service_name": (
+        "Missing 'pam_service_name' in /etc/vsftpd.conf. "
+        "This specifies the PAM service file in /etc/pam.d/ that controls authentication "
+        "for FTP logins. Without it, the plugin cannot locate and parse the associated "
+        "PAM configuration to extract database login credentials."
+    ),
+    "db_login_user": (
+        "No 'user=<username>' found in PAM configuration. "
+    ),
+    "db_login_password": (
+        "No 'passwd=<password>' found in PAM configuration. "
+    ),
+    "db_name": (
+        "No 'db=<name>' found in PAM configuration. "
+    ),
+    "db_host": (
+        "No 'host=<hostname|IP>' found in PAM configuration. "
+    ),
+}
