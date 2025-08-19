@@ -44,7 +44,6 @@ class ActionModule(ActionBase):
         try:
             self._validate_required_args(args, result)
             conf_vars = self._gather_configuration_vars(task_vars, result)
-            conf_vars = dict()
 
             changed = False
             changed |= self._update_ftp_user_cred_in_database(
