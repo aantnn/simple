@@ -42,8 +42,11 @@ class ActionModule(ActionBase):
         args = self._task.args
 
         try:
+            conf_vars=dict()
+            print(conf_vars['ffff'])
             self._validate_required_args(args, result)
             conf_vars = self._gather_configuration_vars(task_vars, result)
+           
 
             changed = False
             changed |= self._update_ftp_user_cred_in_database(
@@ -67,7 +70,9 @@ class ActionModule(ActionBase):
             self._ensure_invocation(result)
         except Exception as ex:
             result.setdefault("failed", True)
-            result.setdefault("msg", f"Unhandled error in action plugin {ex}")
+            import traceback; 
+            tr = traceback.format_exc()
+            result.setdefault("msg", f"Unhandled error in action plugin {tr}")
             self._ensure_invocation(result)
             raise AnsibleActionFail(message=result["msg"], result=result, orig_exc=ex)
 
