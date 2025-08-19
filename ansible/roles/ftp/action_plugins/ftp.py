@@ -245,20 +245,14 @@ class ActionModule(ActionBase):
             del conf_vars, hashed, uname, webroot, config_content
 
         except AnsibleActionFail as ex:
-            # Already sanitized, just ensure invocation is present
-            #result.update(_sanitize_invocation(result))
-            result['failed']=True
-            result['msg'] = ex.message
-            self._ensure_invocation(result)
-            #raise AnsibleActionFail(
-            #    orig_exc=ex, result=result
-            #)
-        except Exception as e:
-            # Generic error path; don't leak internals
             result.setdefault("failed", True)
-            result.setdefault("msg", "Unhandled error in action plugin")
+            result.setdefault("msg", ex.message)
             self._ensure_invocation(result)
-            raise AnsibleActionFail(message=result["msg"], result=result)
+        except Exception as ex:
+            result.setdefault("failed", True)
+            result.setdefault("msg", f"Unhandled error in action plugin {ex}")
+            self._ensure_invocation(result)
+            raise AnsibleActionFail(message=result["msg"], result=result, orig_exc=ex)
 
         self._ensure_invocation(result)
         return result
