@@ -17,6 +17,22 @@ from ansible.module_utils._text import to_text
 import secrets, string, hashlib, base64
 
 
+SENSITIVE_KEY_PAT = re.compile(
+    r"(pass|password|passwd|secret|token|key|api[_-]?key|auth|authorization|cookie|content|query|queries)$",
+    re.IGNORECASE,
+)
+
+
+def _safe_identifier(s: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s):
+        raise AnsibleActionFail(message="Invalid username")
+    return s
+
+
+def _safe_sql_literal(s: str) -> str:
+    return s.replace("'", "''")
+
+
 class ActionModule(ActionBase):
     """Provision FTP user row + webroot + vsftpd config in one go."""
 
@@ -39,25 +55,25 @@ class ActionModule(ActionBase):
     }
 
     def _ensure_invocation(self, result):
-        if "invocation" not in result:
-            if self._task.no_log:
-                result["invocation"] = "CENSORED: no_log is set"
-            else:
-                # NOTE: Should be removed in the future. For now keep this broken
-                # behaviour, have a look in the PR 51582
-                result["invocation"] = self._task.args.copy()
-                result["invocation"]["module_args"] = self._task.args.copy()
+        if self._task.no_log:
+            result["invocation"] = "CENSORED: no_log is set"
+            return result
 
-        if isinstance(result["invocation"], dict):
-            if "content" in result["invocation"]:
-                result["invocation"][
-                    "content"
-                ] = "CENSORED: content is a no_log parameter"
-            if result["invocation"].get("module_args", {}).get("content") is not None:
-                result["invocation"]["module_args"][
-                    "content"
-                ] = "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER"
+        result['invocation'] = self._task.args.copy()
+        result['invocation']['module_args'] = self._task.args.copy()
 
+        invocation = result['invocation']
+        module_args = result['invocation']['module_args']
+    
+        for key, value in invocation.items():
+            if SENSITIVE_KEY_PAT.search(str(key)): 
+                invocation[key] = f"CENSORED: {key} is a no_log parameter"
+                if key in module_args:
+                    module_args[key] = 'VALUE_SPECIFIED_IN_NO_LOG_PARAMETER'
+
+        for k, v in result.items():
+            if SENSITIVE_KEY_PAT.search(str(k)):
+                        result[k] = 'VALUE_SPECIFIED_IN_NO_LOG_PARAMETER'
         return result
 
     def _gen_hash(self, plain: str) -> str:
@@ -101,19 +117,15 @@ class ActionModule(ActionBase):
             shared_loader_obj=self._shared_loader_obj,
         ).run(task_vars=task_vars)
 
-    """
-    https://github.com/ansible/ansible/blob/0467e1eaa930dbe885192579d829d38f2d9d2f2c/lib/ansible/plugins/action/__init__.py#L1378
-    """
-
     def _read_remote_file(self, task_vars, path, result: dict):
         res = self._execute_module(
             module_name="ansible.builtin.slurp",
             module_args={"src": path},
             task_vars=task_vars,
         )
+        result.update(res)
         if res.get("failed"):
-            result.update(res)
-            raise AnsibleActionFail(message=result.get("msg"), result=result)
+            raise AnsibleActionFail(message=f"ansible.builtin.slurp: {result.get("msg")}", result=result)
         return base64.b64decode(res["content"]).decode("utf-8", errors="replace")
 
     def _parse_vars(self, text, patterns):
@@ -130,48 +142,53 @@ class ActionModule(ActionBase):
 
     def run(self, tmp=None, task_vars=None):
         result = super(ActionModule, self).run(tmp, task_vars)
-        args = self._task.args
         del tmp
+        args = self._task.args
+
         required = ["username", "password", "webroot", "state"]
         missing = [r for r in required if r not in args]
         if missing:
             self._ensure_invocation(result)
-            raise AnsibleActionFail(message=f"Missing required args: {', '.join(missing)}")
+            raise AnsibleActionFail(
+                message=f"Missing required args: {', '.join(missing)}"
+            )
 
-        """Read database credential values from the configuration files"""
-        vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd.conf", result)
-        conf_vars = self._parse_vars(vsftpd_conf, self.VAR_PATTERNS)
-        del vsftpd_conf
-        pam_conf = self._read_remote_file(
-            task_vars, f"/etc/pam.d/{conf_vars['pam_service_name']}", result
-        )
-        pam_vars = self._parse_vars(pam_conf, self.PAM_PATTERNS)
-        del pam_conf
-        conf_vars.update(pam_vars)
-        del pam_vars
+        changed = False
         try:
-            # 1. Generate salted SHA‑512 hash
-            hashed = self._gen_hash(args.get("password"))
+            vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd.conf", result)
+            conf_vars = self._parse_vars(vsftpd_conf, self.VAR_PATTERNS)
+            del vsftpd_conf
 
-            # 2. Insert/update DB row
+            pam_conf = self._read_remote_file(
+                task_vars, f"/etc/pam.d/{conf_vars['pam_service_name']}", result
+            )
+            pam_vars = self._parse_vars(pam_conf, self.PAM_PATTERNS)
+            del pam_conf
+
+            conf_vars.update(pam_vars)
+            del pam_vars
+
+            hashed = self._gen_hash(args.get("password"))
+            uname = _safe_identifier(args.get("username"))
+
+            q = (
+                "INSERT INTO users (username, password, active) "
+                f"VALUES ('{_safe_sql_literal(uname)}','{_safe_sql_literal(hashed)}',1) "
+                "ON DUPLICATE KEY UPDATE password=VALUES(password), active=1;"
+            )
             exec_result = self._mysql_query(
                 task_vars,
                 login_db=conf_vars.get("db_name"),
                 login_user=conf_vars.get("db_login_user"),
                 login_password=conf_vars.get("db_login_password"),
                 login_host=conf_vars.get("db_host"),
-                query=f"""
-                INSERT INTO users (username, password, active)
-                VALUES ('{args.get('username')}', '{hashed}', 1)
-                ON DUPLICATE KEY UPDATE password=VALUES(password), active=1;
-                """,
+                query=q,
             )
-            changed = exec_result.get("changed") or changed
             if exec_result.get("failed"):
                 result.update(exec_result)
-                raise AnsibleActionFail(message=result.get("msg"), result=result)
+                raise AnsibleActionFail(result=result)
+            changed = exec_result.get("changed", False) or changed
 
-            # 3. Ensure webroot exists
             webroot = args.get("webroot")
             exec_result = self._ensure_dir(
                 task_vars,
@@ -180,36 +197,66 @@ class ActionModule(ActionBase):
                 conf_vars.get("ftp_guest_user"),
                 "0755",
             )
-            changed = exec_result.get("changed") or changed
             if exec_result.get("failed"):
                 result.update(exec_result)
-                raise AnsibleActionFail(message=result.get("msg"), result=result)
+                raise AnsibleActionFail(
+                    message=to_text(
+                        exec_result.get("msg") or "Failed to create webroot"
+                    ),
+                    result=result,
+                )
+            changed = exec_result.get("changed", False) or changed
 
-            # 5. Deploy vsftpd per‑user config
-            config_content = f"""
-            local_root={webroot}
-            write_enable=YES
-            """
-            exec_result = self._copy_file(
-                task_vars,
-                dest=f"{conf_vars.get('ftp_users_dir')}/{args.get('username')}",
+            config_content = f"local_root={webroot}\nwrite_enable=YES\n"
+
+            copy_task = self._task.copy()
+            copy_task.args = dict(
+                dest=f"{conf_vars.get('ftp_users_dir')}/{uname}",
                 content=config_content,
-                owner=conf_vars.get('ftp_guest_user'),
+                owner=conf_vars.get("ftp_guest_user"),
                 group=conf_vars.get("ftp_guest_user"),
                 mode="0644",
             )
-            changed = exec_result.get("changed") or changed
+            copy_task.no_log = True  # extra safety
+
+            exec_result = self._shared_loader_obj.action_loader.get(
+                "ansible.builtin.copy",
+                task=copy_task,
+                connection=self._connection,
+                play_context=self._play_context,
+                loader=self._loader,
+                templar=self._templar,
+                shared_loader_obj=self._shared_loader_obj,
+            ).run(task_vars=task_vars)
             if exec_result.get("failed"):
                 result.update(exec_result)
-                raise AnsibleActionFail(message=result.get("msg"), result=result)
+                raise AnsibleActionFail(
+                    message=to_text(exec_result.get("msg") or "Failed to write config"),
+                    result=result,
+                )
+            changed = exec_result.get("changed", False) or changed
+
             result.update(
                 changed=changed,
-                msg=f"FTP user {args.get('username')} created/updated with webroot: {webroot}",
+                msg=f"FTP user {uname} created/updated with webroot: {webroot}",
+            )
+
+            # Minimize secret residue
+            del conf_vars, hashed, uname, webroot, config_content
+
+        except AnsibleActionFail as ex:
+            # Already sanitized, just ensure invocation is present
+            #result.update(_sanitize_invocation(result))
+            self._ensure_invocation(result)
+            raise AnsibleActionFail(
+                orig_exc=ex, result=result
             )
         except Exception as e:
+            # Generic error path; don't leak internals
+            result.setdefault("failed", True)
+            result.setdefault("msg", "Unhandled error in action plugin")
             self._ensure_invocation(result)
-            raise AnsibleActionFail(message=result.get("msg"), result=result)
+            raise AnsibleActionFail(message=result["msg"], result=result)
 
-        # Ensure invocation is always present and scrubbed
         self._ensure_invocation(result)
         return result
