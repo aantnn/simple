@@ -36,6 +36,45 @@ def _safe_sql_literal(s: str) -> str:
 class ActionModule(ActionBase):
     """Provision FTP user row + webroot + vsftpd config in one go."""
 
+    def run(self, tmp=None, task_vars=None):
+        result = super(ActionModule, self).run(tmp, task_vars)
+        del tmp
+        args = self._task.args
+
+        try:
+            self._validate_required_args(args, result)
+            # conf_vars = self._gather_configuration_vars(task_vars, result)
+            conf_vars = dict()
+
+            changed = False
+            changed |= self._update_ftp_user_cred_in_database(
+                args, conf_vars, task_vars, result
+            )
+            changed |= self._ensure_webroot_directory(
+                args, conf_vars, task_vars, result
+            )
+            changed |= self._create_vsftpd_user_config_file(
+                args, conf_vars, task_vars, result
+            )
+
+            result.update(
+                changed=changed,
+                msg=f"FTP user {args['username']} created/updated with webroot: {args['webroot']}",
+            )
+
+        except AnsibleActionFail as ex:
+            result.setdefault("failed", True)
+            result.setdefault("msg", ex.message)
+            self._ensure_invocation(result)
+        except Exception as ex:
+            result.setdefault("failed", True)
+            result.setdefault("msg", f"Unhandled error in action plugin {ex}")
+            self._ensure_invocation(result)
+            raise AnsibleActionFail(message=result["msg"], result=result, orig_exc=ex)
+
+        self._ensure_invocation(result)
+        return result
+    
     VAR_PATTERNS = {
         "ftp_guest_user": re.compile(
             r"^\s*(?:guest_username|ftp_username|chown_username)\s*=\s*(\S+)",
@@ -142,44 +181,7 @@ class ActionModule(ActionBase):
                 raise ConfigVarMissingError(key)
         return out
 
-    def run(self, tmp=None, task_vars=None):
-        result = super(ActionModule, self).run(tmp, task_vars)
-        del tmp
-        args = self._task.args
-
-        try:
-            self._validate_required_args(args, result)
-            # conf_vars = self._gather_configuration_vars(task_vars, result)
-            conf_vars = dict()
-
-            changed = False
-            changed |= self._update_ftp_user_cred_in_database(
-                args, conf_vars, task_vars, result
-            )
-            changed |= self._ensure_webroot_directory(
-                args, conf_vars, task_vars, result
-            )
-            changed |= self._create_vsftpd_user_config_file(
-                args, conf_vars, task_vars, result
-            )
-
-            result.update(
-                changed=changed,
-                msg=f"FTP user {args['username']} created/updated with webroot: {args['webroot']}",
-            )
-
-        except AnsibleActionFail as ex:
-            result.setdefault("failed", True)
-            result.setdefault("msg", ex.message)
-            self._ensure_invocation(result)
-        except Exception as ex:
-            result.setdefault("failed", True)
-            result.setdefault("msg", f"Unhandled error in action plugin {ex}")
-            self._ensure_invocation(result)
-            raise AnsibleActionFail(message=result["msg"], result=result, orig_exc=ex)
-
-        self._ensure_invocation(result)
-        return result
+   
 
     def _validate_required_args(self, args, result):
         """Validate that all required arguments are present."""
