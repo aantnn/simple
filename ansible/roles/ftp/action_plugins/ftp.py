@@ -16,6 +16,31 @@ from ansible.errors import AnsibleError, AnsibleActionFail
 from ansible.module_utils._text import to_text
 import secrets, string, hashlib, base64
 
+import ctypes
+import ctypes.util
+
+libcrypt_path = ctypes.util.find_library("crypt")
+if not libcrypt_path:
+    raise OSError("libcrypt not found — install libxcrypt or equivalent")
+libcrypt = ctypes.CDLL(libcrypt_path)
+
+# Declare crypt() signature
+libcrypt.crypt.restype = ctypes.c_char_p
+libcrypt.crypt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+
+
+def _sha512_crypt(password: str, salt: str) -> str:
+    full_salt = f"$6${salt}"
+    result = libcrypt.crypt(password.encode(), full_salt.encode())
+    return result.decode()
+
+
+def _generate_salt() -> str:
+    raw = secrets.token_bytes(12)
+    b64 = base64.b64encode(raw).decode()
+    safe = b64.translate(str.maketrans("/+", "._"))
+    return safe
+
 
 SENSITIVE_KEY_PAT = re.compile(
     r"(pass|password|passwd|secret|token|key|api[_-]?key|auth|authorization|cookie|content|query|queries)$",
@@ -44,7 +69,6 @@ class ActionModule(ActionBase):
         try:
             self._validate_required_args(args, result)
             conf_vars = self._gather_configuration_vars(task_vars, result)
-           
 
             changed = False
             changed |= self._update_ftp_user_cred_in_database(
@@ -68,7 +92,8 @@ class ActionModule(ActionBase):
             self._ensure_invocation(result)
         except Exception as ex:
             result.setdefault("failed", True)
-            import traceback; 
+            import traceback
+
             tr = traceback.format_exc()
             result.setdefault("msg", f"Unhandled error in action plugin {tr}")
             self._ensure_invocation(result)
@@ -76,7 +101,7 @@ class ActionModule(ActionBase):
 
         self._ensure_invocation(result)
         return result
-    
+
     VAR_PATTERNS = {
         "ftp_guest_user": re.compile(
             r"^\s*(?:guest_username|ftp_username|chown_username)\s*=\s*(\S+)",
@@ -116,12 +141,6 @@ class ActionModule(ActionBase):
             if SENSITIVE_KEY_PAT.search(str(k)):
                 result[k] = "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER"
         return result
-
-    def _gen_hash(self, plain: str) -> str:
-        alphabet = string.ascii_letters + string.digits + "._"
-        salt = "".join(secrets.choice(alphabet) for _ in range(12))
-        digest = hashlib.sha512((salt + plain).encode()).digest()
-        return f"$6${salt}${base64.b64encode(digest).decode()}"
 
     def _mysql_query(self, task_vars, **kwargs):
         return self._execute_module(
@@ -183,8 +202,6 @@ class ActionModule(ActionBase):
                 raise ConfigVarMissingError(key)
         return out
 
-   
-
     def _validate_required_args(self, args, result):
         """Validate that all required arguments are present."""
         required = ["username", "password", "webroot", "state"]
@@ -198,7 +215,9 @@ class ActionModule(ActionBase):
     def _gather_configuration_vars(self, task_vars, result):
         """Collect all necessary configuration variables from system files."""
 
-        vsftpd_conf = self._read_remote_file(task_vars, "/etc/vsftpd/vsftpd.conf", result)
+        vsftpd_conf = self._read_remote_file(
+            task_vars, "/etc/vsftpd/vsftpd.conf", result
+        )
         conf_vars = self._parse_vars(vsftpd_conf, self.VAR_PATTERNS)
         pam_conf = self._read_remote_file(
             task_vars, f"/etc/pam.d/{conf_vars['pam_service_name']}", result
@@ -211,7 +230,8 @@ class ActionModule(ActionBase):
         self, args, conf_vars, task_vars, result: dict
     ):
         """Update or create the FTP user in the database."""
-        hashed = self._gen_hash(args["password"])
+        salt = _generate_salt()
+        hashed = _sha512_crypt(args["password"], salt)
         uname = _safe_identifier(args["username"])
 
         q = (

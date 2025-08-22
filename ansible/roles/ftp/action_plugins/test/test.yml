@@ -11,13 +11,14 @@
           - mysql-server
           - vsftpd
       become: true
+
     - name: Install PyMySQL python
       ansible.builtin.pip:
         state: present
         name:
           - PyMySQL
       become: true
-      
+  
     - name: Gather available services
       ansible.builtin.service_facts:
     - name: Pick mysql or mysqld if available
@@ -29,11 +30,13 @@
             | list
             | first) | default('unknown')
           }}
+
     - name: Ensure mysql-server is running
       ansible.builtin.service:
         state: started
         name: "{{ mysql_service_name }}"
       become: true
+
     - name: Ensure FTP database exists
       community.mysql.mysql_db:
         name: "ftpdb"
@@ -42,6 +45,7 @@
         # login_password: "1"
         login_unix_socket: /var/lib/mysql/mysql.sock
       become: true
+
     - name: Ensure FTP DB user exists with proper grants
       community.mysql.mysql_user:
         name: "ftpuser"
@@ -53,6 +57,7 @@
         # login_password: "1"
         login_unix_socket: /var/lib/mysql/mysql.sock
       become: true
+
     - name: Ensure `users` table exists
       community.mysql.mysql_query:
         login_db: ftpdb
@@ -67,6 +72,7 @@
             active TINYINT(1) NOT NULL DEFAULT 1
           );
       become: true
+      
     - name: Create FTP user using action plugin add_ftp_user.py
       ftp:
         username: "ftpuser"
