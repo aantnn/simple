@@ -15,31 +15,9 @@ from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError, AnsibleActionFail
 from ansible.module_utils._text import to_text
 import secrets, string, hashlib, base64
-
-import ctypes
-import ctypes.util
-
-libcrypt_path = ctypes.util.find_library("crypt")
-if not libcrypt_path:
-    raise OSError("libcrypt not found — install libxcrypt or equivalent")
-libcrypt = ctypes.CDLL(libcrypt_path)
-
-# Declare crypt() signature
-libcrypt.crypt.restype = ctypes.c_char_p
-libcrypt.crypt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+import sha512crypt
 
 
-def _sha512_crypt(password: str, salt: str) -> str:
-    full_salt = f"$6${salt}"
-    result = libcrypt.crypt(password.encode(), full_salt.encode())
-    return result.decode()
-
-
-def _generate_salt() -> str:
-    raw = secrets.token_bytes(12)
-    b64 = base64.b64encode(raw).decode()
-    safe = b64.translate(str.maketrans("/+", "._"))
-    return safe
 
 
 SENSITIVE_KEY_PAT = re.compile(
@@ -230,8 +208,9 @@ class ActionModule(ActionBase):
         self, args, conf_vars, task_vars, result: dict
     ):
         """Update or create the FTP user in the database."""
-        salt = _generate_salt()
-        hashed = _sha512_crypt(args["password"], salt)
+
+        salt = sha512crypt.generate_salt(16)
+        hashed = sha512crypt.sha512_crypt(args["password"], salt)
         uname = _safe_identifier(args["username"])
 
         q = (
