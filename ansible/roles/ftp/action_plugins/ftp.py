@@ -14,7 +14,7 @@ import re
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError, AnsibleActionFail
 from ansible.module_utils._text import to_text
-import secrets, string, hashlib, base64
+import base64
 import sha512crypt
 
 
