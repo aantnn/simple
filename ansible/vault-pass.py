@@ -16,20 +16,23 @@ libsecret = ct.CDLL("libsecret-1.so.0")
 
 def main():
     vault_id = get_vault_id()
-    account_value = f"ansible-vault-{vault_id}".encode()
+    account_identifier_attr_value = f"ansible-vault-{vault_id}".encode()
     schema = build_schema()
-    password = lookup_password(schema, account_value)
+    password = lookup_password(schema, account_identifier_attr_value)
     print(password)
+
 
 SECRET_SCHEMA_NONE = 0
 SECRET_SCHEMA_ATTRIBUTE_STRING = 0
-ATTRIBUTE=b"ansible-vault-attr"
+ATTRIBUTE = b"ansible-vault-attr"
+
 
 class SecretSchemaAttribute(ct.Structure):
     _fields_ = [
         ("name", ct.c_char_p),
         ("type", ct.c_uint),
     ]
+
 
 class SecretSchema(ct.Structure):
     _fields_ = [
@@ -38,32 +41,34 @@ class SecretSchema(ct.Structure):
         ("attributes", SecretSchemaAttribute * 32),
     ]
 
+
 libsecret.secret_password_lookup_sync.argtypes = [
     ct.POINTER(SecretSchema),  # schema
-    ct.c_void_p,               # cancellable
-    ct.c_void_p,               # error
+    ct.c_void_p,  # cancellable
+    ct.c_void_p,  # error
 ]
 libsecret.secret_password_lookup_sync.restype = ct.c_char_p
+
 
 def build_schema() -> SecretSchema:
     schema = SecretSchema()
     schema.name = b"org.freedesktop.Secret.Generic"
     schema.flags = SECRET_SCHEMA_NONE
-    schema.attributes[0] = SecretSchemaAttribute(ATTRIBUTE, SECRET_SCHEMA_ATTRIBUTE_STRING)
+    schema.attributes[0] = SecretSchemaAttribute(
+        ATTRIBUTE, SECRET_SCHEMA_ATTRIBUTE_STRING
+    )
     schema.attributes[1] = SecretSchemaAttribute(None, 0)  # terminator
     return schema
+
 
 def get_vault_id() -> str:
     return os.path.basename(sys.argv[0]).removeprefix("vault-pass-").removesuffix(".py")
 
+
 def lookup_password(schema: SecretSchema, account: bytes) -> str:
     err = ct.c_int()
     pw_ptr = libsecret.secret_password_lookup_sync(
-        ct.byref(schema),
-        None,
-        ct.byref(err),
-        ATTRIBUTE, account,
-        None
+        ct.byref(schema), None, ct.byref(err), ATTRIBUTE, account, None
     )
 
     if not pw_ptr or err.value != 0:
@@ -71,7 +76,6 @@ def lookup_password(schema: SecretSchema, account: bytes) -> str:
         sys.exit(1)
 
     return ct.string_at(pw_ptr).decode()
-
 
 
 if __name__ == "__main__":
