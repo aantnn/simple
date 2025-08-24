@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug FTP Action Plugin",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "/var/home/a/.local/bin/ansible-playbook",
+      "args": ["${workspaceFolder}/ansible/roles/ftp/action_plugins/test/test.yml", "-vvv" ,"-i", "192.168.122.54,"],
+      "env": {
+        "ANSIBLE_DEBUG": "1",
+        "ANSIBLE_ACTION_PLUGINS": "${workspaceFolder}/ansible/roles/ftp/action_plugins"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

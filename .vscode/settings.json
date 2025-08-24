@@ -1,0 +1,10 @@
+{
+  "python.defaultInterpreterPath": "/home/a/.local/share/pipx/venvs/ansible/bin/python",
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/inventory.json": "file://${userHome}/projects/fornex/ansible/inventory.yml"
+  },
+  "ansible.python.interpreterPath": "/home/a/.local/share/pipx/venvs/ansible/bin/python",
+  "python.analysis.extraPaths": [
+    "./ansible/roles/ftp/action_plugins/util"
+  ]
+}
