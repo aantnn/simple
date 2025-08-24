@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# secret-tool store --label='ansible-vault-dev' xdg:schema org.freedesktop.Secret.Generic account  ansible-vault-dev
+# ansible-vault create  --vault-id dev@./vault-pass-dev.py dev-secret.yml
 import os
 import sys
 import ctypes as ct
