@@ -10,16 +10,20 @@ Usage:
 import os
 import sys
 import ctypes as ct
-
-libsecret = ct.CDLL("libsecret-1.so.0")
+import ctypes.util
 
 
 def main():
     vault_id = get_vault_id()
-    account_identifier_attr_value = f"ansible-vault-{vault_id}".encode()
+    account_id_attr_value = f"ansible-vault-{vault_id}".encode()
     schema = build_schema()
-    password = lookup_password(schema, account_identifier_attr_value)
+    password = lookup_password(schema, account_id_attr_value)
     print(password)
+
+libsecret_path = ctypes.util.find_library("secret-1")
+if not libsecret_path:
+    raise OSError("libsecret not found — install libsecret or equivalent")
+libsecret = ct.CDLL(libsecret_path)
 
 
 SECRET_SCHEMA_NONE = 0
